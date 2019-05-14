@@ -194,7 +194,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 this.mQClientFactory = MQClientManager.getInstance().getAndCreateMQClientInstance(this.defaultMQProducer, rpcHook);
 
                 
-                //注册生产者组，也是放在一个map钟
+                //注册生产者组，也是放在一个map中
                 boolean registerOK = mQClientFactory.registerProducer(this.defaultMQProducer.getProducerGroup(), this);
                 if (!registerOK) {
                     this.serviceState = ServiceState.CREATE_JUST;
@@ -227,6 +227,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 break;
         }
 
+        //发送心跳
         this.mQClientFactory.sendHeartbeatToAllBrokerWithLock();
     }
 
