@@ -368,6 +368,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
     public RemotingCommand invokeSync(String addr, final RemotingCommand request, long timeoutMillis)
         throws InterruptedException, RemotingConnectException, RemotingSendRequestException, RemotingTimeoutException {
         long beginStartTime = System.currentTimeMillis();
+        //根据broker地址获取或者创建一个通道
         final Channel channel = this.getAndCreateChannel(addr);
         if (channel != null && channel.isActive()) {
             try {
@@ -399,6 +400,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
     }
 
     private Channel getAndCreateChannel(final String addr) throws InterruptedException {
+    	//如果broker地址为空，则返回一个到namesrv的连接
         if (null == addr) {
             return getAndCreateNameserverChannel();
         }
@@ -485,6 +487,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                     createNewConnection = true;
                 }
 
+                //创建新连接
                 if (createNewConnection) {
                     ChannelFuture channelFuture = this.bootstrap.connect(RemotingHelper.string2SocketAddress(addr));
                     log.info("createChannel: begin to connect remote host[{}] asynchronously", addr);
