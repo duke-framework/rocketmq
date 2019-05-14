@@ -295,6 +295,8 @@ public abstract class NettyRemotingAbstract {
     }
 
     /**
+     * 
+     * 执行回调，这里做了容错处理，如果线程池繁忙（抛出异常）则在当前线程中运行
      * Execute callback in callback executor. If callback executor is null, run directly in current thread
      */
     private void executeInvokeCallback(final ResponseFuture responseFuture) {
@@ -367,6 +369,7 @@ public abstract class NettyRemotingAbstract {
 
     /**
      * <p>
+     * 周期性的扫描过期废弃的请求 也会执行回调
      * This method is periodically invoked to scan and expire deprecated request.
      * </p>
      */
@@ -375,8 +378,8 @@ public abstract class NettyRemotingAbstract {
         Iterator<Entry<Integer, ResponseFuture>> it = this.responseTable.entrySet().iterator();
         while (it.hasNext()) {
             Entry<Integer, ResponseFuture> next = it.next();
-            ResponseFuture rep = next.getValue();
 
+            ResponseFuture rep = next.getValue();
             if ((rep.getBeginTimestamp() + rep.getTimeoutMillis() + 1000) <= System.currentTimeMillis()) {
                 rep.release();
                 it.remove();
@@ -394,6 +397,12 @@ public abstract class NettyRemotingAbstract {
         }
     }
 
+    /*
+     * 
+     * 同步发送，由于netty的writeAndFlush 操作是异步的，所以增加回调通知机制，再在当前线程阻塞住，这样来实现同步。
+     * 
+     * 
+     */
     public RemotingCommand invokeSyncImpl(final Channel channel, final RemotingCommand request,
         final long timeoutMillis)
         throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException {
@@ -420,6 +429,9 @@ public abstract class NettyRemotingAbstract {
                 }
             });
 
+            
+            // 这里可以看出 RMQ 中对异步调用的处理  waitResponse 实际上是  this.countDownLatch.await(timeoutMillis, TimeUnit.MILLISECONDS); 会在这里阻塞住，等待
+            // 超时，这种带有响应超时的处理 比直接 用等待通知的方式好多了
             RemotingCommand responseCommand = responseFuture.waitResponse(timeoutMillis);
             if (null == responseCommand) {
                 if (responseFuture.isSendRequestOK()) {

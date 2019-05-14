@@ -220,6 +220,8 @@ public class MQClientInstance {
         return mqList;
     }
 
+    
+    //启动流程
     public void start() throws MQClientException {
 
         synchronized (this) {
@@ -227,13 +229,21 @@ public class MQClientInstance {
                 case CREATE_JUST:
                     this.serviceState = ServiceState.START_FAILED;
                     // If not specified,looking address from name server
+                    
+                    // 如果没有配置地址则  则通过HTTP获取获取namesrv地址  
                     if (null == this.clientConfig.getNamesrvAddr()) {
                         this.mQClientAPIImpl.fetchNameServerAddr();
                     }
+                    
                     // Start request-response channel
+                    
+                    // 远程netty连接的地方
                     this.mQClientAPIImpl.start();
+                    
+                    
                     // Start various schedule tasks
                     this.startScheduledTask();
+                    
                     // Start pull service
                     this.pullMessageService.start();
                     // Start rebalance service

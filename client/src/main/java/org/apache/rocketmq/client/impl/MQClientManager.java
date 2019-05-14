@@ -25,6 +25,11 @@ import org.apache.rocketmq.client.log.ClientLogger;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.remoting.RPCHook;
 
+/**
+ * 客户端连接工厂。
+ * @author pleuvoir
+ *
+ */
 public class MQClientManager {
     private final static InternalLogger log = ClientLogger.getLog();
     private static MQClientManager instance = new MQClientManager();
@@ -44,12 +49,14 @@ public class MQClientManager {
         return getAndCreateMQClientInstance(clientConfig, null);
     }
 
+    
+    //创建MQClientInstance
     public MQClientInstance getAndCreateMQClientInstance(final ClientConfig clientConfig, RPCHook rpcHook) {
-        String clientId = clientConfig.buildMQClientId();
+        String clientId = clientConfig.buildMQClientId();  //ip@pid
         MQClientInstance instance = this.factoryTable.get(clientId);
         if (null == instance) {
             instance =
-                new MQClientInstance(clientConfig.cloneClientConfig(),
+                new MQClientInstance(clientConfig.cloneClientConfig(), //这里new一个新的  猜测是为了避免并发的问题
                     this.factoryIndexGenerator.getAndIncrement(), clientId, rpcHook);
             MQClientInstance prev = this.factoryTable.putIfAbsent(clientId, instance);
             if (prev != null) {

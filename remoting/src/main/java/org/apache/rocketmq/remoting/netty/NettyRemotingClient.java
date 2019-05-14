@@ -66,6 +66,7 @@ import org.apache.rocketmq.remoting.exception.RemotingConnectException;
 import org.apache.rocketmq.remoting.exception.RemotingSendRequestException;
 import org.apache.rocketmq.remoting.exception.RemotingTimeoutException;
 import org.apache.rocketmq.remoting.exception.RemotingTooMuchRequestException;
+import org.apache.rocketmq.remoting.netty.NettyRemotingAbstract.NettyEventExecutor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 public class NettyRemotingClient extends NettyRemotingAbstract implements RemotingClient {
@@ -92,8 +93,8 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
      * Invoke the callback methods in this executor when process response.
      */
     private ExecutorService callbackExecutor;
-    private final ChannelEventListener channelEventListener;
-    private DefaultEventExecutorGroup defaultEventExecutorGroup;
+    private final ChannelEventListener channelEventListener;  //网络事件监听器
+    private DefaultEventExecutorGroup defaultEventExecutorGroup;  //netty提供的事件处理线程
 
     public NettyRemotingClient(final NettyClientConfig nettyClientConfig) {
         this(nettyClientConfig, null);
@@ -165,8 +166,8 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             .option(ChannelOption.TCP_NODELAY, true)
             .option(ChannelOption.SO_KEEPALIVE, false)
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, nettyClientConfig.getConnectTimeoutMillis())
-            .option(ChannelOption.SO_SNDBUF, nettyClientConfig.getClientSocketSndBufSize())
-            .option(ChannelOption.SO_RCVBUF, nettyClientConfig.getClientSocketRcvBufSize())
+            .option(ChannelOption.SO_SNDBUF, nettyClientConfig.getClientSocketSndBufSize())  //默认为65535
+            .option(ChannelOption.SO_RCVBUF, nettyClientConfig.getClientSocketRcvBufSize())  //默认为65535
             .handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 public void initChannel(SocketChannel ch) throws Exception {
@@ -189,6 +190,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                 }
             });
 
+        //client保养服务
         this.timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -200,6 +202,8 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             }
         }, 1000 * 3, 1000);
 
+        
+        //new NettyEventExecutor() 线程里面是个死循环 从队列中每隔 3秒 拉一个事件执行channelEventListener的代码
         if (this.channelEventListener != null) {
             this.nettyEventExecutor.start();
         }
@@ -372,6 +376,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                 if (timeoutMillis < costTime) {
                     throw new RemotingTimeoutException("invokeSync call timeout");
                 }
+                //调用netty
                 RemotingCommand response = this.invokeSyncImpl(channel, request, timeoutMillis - costTime);
                 doAfterRpcHooks(RemotingHelper.parseChannelRemoteAddr(channel), request, response);
                 return response;
