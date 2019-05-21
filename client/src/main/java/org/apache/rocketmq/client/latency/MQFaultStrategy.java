@@ -55,6 +55,9 @@ public class MQFaultStrategy {
         this.sendLatencyFaultEnable = sendLatencyFaultEnable;
     }
 
+    
+    
+    // 选择一个消息队列，如果是第一次发送 lastBrokerName为空  直接将循环第一次获得的消息队列返回，这个队列中包含BrokerName
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName) {
         if (this.sendLatencyFaultEnable) {
             try {

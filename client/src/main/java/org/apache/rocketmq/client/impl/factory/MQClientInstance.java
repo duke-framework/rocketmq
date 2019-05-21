@@ -237,18 +237,17 @@ public class MQClientInstance {
                     
                     // Start request-response channel
                     
-                    // 远程netty连接的地方
+                    // 远程netty连接的地方    //TODO 但是这里好像没有建立连接？
                     this.mQClientAPIImpl.start();
                     
                     
-                    // Start various schedule tasks
+                    // 启动多个定时任务
                     this.startScheduledTask();
                     
-                    // Start pull service
+                    // 启动消息拉取服务
                     this.pullMessageService.start();
-                    // Start rebalance service
+                    // 启动负载均衡 根据topic MQConsumerInner.doRebalance 有推拉两种模式的实现
                     this.rebalanceService.start();
-                    // Start push service
                     this.defaultMQProducer.getDefaultMQProducerImpl().start(false);
                     log.info("the client factory [{}] start OK", this.clientId);
                     this.serviceState = ServiceState.RUNNING;
