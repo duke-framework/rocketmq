@@ -27,9 +27,21 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 public interface RemotingServer extends RemotingService {
 
+	
+	/**
+	 * 给每个requestCode注册一个处理器
+	 * @param requestCode
+	 * @param processor
+	 * @param executor
+	 */
     void registerProcessor(final int requestCode, final NettyRequestProcessor processor,
         final ExecutorService executor);
 
+    /**
+     * 默认的实现，当根据requestCode没有找到处理器时使用这个
+     * @param processor
+     * @param executor
+     */
     void registerDefaultProcessor(final NettyRequestProcessor processor, final ExecutorService executor);
 
     int localListenPort();

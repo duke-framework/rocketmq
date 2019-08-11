@@ -59,12 +59,12 @@ public abstract class NettyRemotingAbstract {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(RemotingHelper.ROCKETMQ_REMOTING);
 
     /**
-     * Semaphore to limit maximum number of on-going one-way requests, which protects system memory footprint.
+     * 信号量：用于限制正在请求的单向请求的个数，用于保护系统内存
      */
     protected final Semaphore semaphoreOneway;
 
     /**
-     * Semaphore to limit maximum number of on-going asynchronous requests, which protects system memory footprint.
+     * 信号量：用于限制正在进行中的异步请求的个数，用于保护系统内存
      */
     protected final Semaphore semaphoreAsync;
 
@@ -155,10 +155,10 @@ public abstract class NettyRemotingAbstract {
         if (cmd != null) {
             switch (cmd.getType()) {
                 case REQUEST_COMMAND:
-                    processRequestCommand(ctx, cmd);
+                    processRequestCommand(ctx, cmd);  //处理接收到的请求消息
                     break;
                 case RESPONSE_COMMAND:
-                    processResponseCommand(ctx, cmd);
+                    processResponseCommand(ctx, cmd); //处理返回的响应，实际上服务端发送的消息不一定是响应消息，也可以主动发送
                     break;
                 default:
                     break;
@@ -269,23 +269,24 @@ public abstract class NettyRemotingAbstract {
     }
 
     /**
-     * Process response from remote peer to the previous issued requests.
-     *
-     * @param ctx channel handler context.
-     * @param cmd response command instance.
+     * 处理之前发送给远端后  现在远端响应过过来的消息
      */
     public void processResponseCommand(ChannelHandlerContext ctx, RemotingCommand cmd) {
         final int opaque = cmd.getOpaque();
-        final ResponseFuture responseFuture = responseTable.get(opaque);
+        
+      //取到之前的占位，正常情况下发送端在允许等待时间内不会清除标记，只有超时了finally会把关系移除掉，才会存在为 null的情况，
+        final ResponseFuture responseFuture = responseTable.get(opaque); 
         if (responseFuture != null) {
-            responseFuture.setResponseCommand(cmd);
+            responseFuture.setResponseCommand(cmd);	//设置响应结果，这一步发送端还在等待响应
 
-            responseTable.remove(opaque);
+            responseTable.remove(opaque);	//清除占位，不清除也行
 
-            if (responseFuture.getInvokeCallback() != null) {
-                executeInvokeCallback(responseFuture);
-            } else {
-                responseFuture.putResponse(cmd);
+            if (responseFuture.getInvokeCallback() != null) { //如果有回调的话 就让发送端继续等着吧，直到超时后它会发现 response有了正常返回就行
+                executeInvokeCallback(responseFuture);	 
+                //执行回调，并没有告知发送端等待结束，因为这个回调也有可能是同步执行的，所以在执行过程中有可能发送端就等待超时了最后finally释放
+                //所以scanResponse的作用就呼之欲出了，当这里执行回调没执行完时，发送端因为等待超时直接返回response结果了，在finally前一刻它兜底扫到那些回调过程中引起waitResponse超时的再执行一次
+            } else {							
+                responseFuture.putResponse(cmd);	//没有回调直接别让发送端等了。countDown之后发送等待的线程得以继续执行
                 responseFuture.release();
             }
         } else {
@@ -369,8 +370,11 @@ public abstract class NettyRemotingAbstract {
 
     /**
      * <p>
-     * 周期性的扫描过期废弃的请求 也会执行回调
-     * This method is periodically invoked to scan and expire deprecated request.
+     * 周期性的扫描过期废弃的请求 同时执行回调
+     * 
+     * 这个主要扫描的是消息开始时间（从new rf那一刻起）+超时时间  +1s < 现在时间的 ，代表这个消息收到的时候发送端已经超时了
+     * 
+     * TODO 这块目前存疑，什么时候会出现这种过期的rf
      * </p>
      */
     public void scanResponseTable() {
@@ -397,11 +401,11 @@ public abstract class NettyRemotingAbstract {
         }
     }
 
-    /*
-     * 
+    /**
+     *
      * 同步发送，由于netty的writeAndFlush 操作是异步的，所以增加回调通知机制，再在当前线程阻塞住，这样来实现同步。
      * 
-     * 
+     * 发送完消息后，设置一个id，这个id对应一个future，等接收到响应结果后future对象对释放等待
      */
     public RemotingCommand invokeSyncImpl(final Channel channel, final RemotingCommand request,
         final long timeoutMillis)
@@ -410,21 +414,21 @@ public abstract class NettyRemotingAbstract {
 
         try {
             final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis, null, null);
-            this.responseTable.put(opaque, responseFuture);
+            this.responseTable.put(opaque, responseFuture); //保存对应关系
             final SocketAddress addr = channel.remoteAddress();
             channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture f) throws Exception {
                     if (f.isSuccess()) {
                         responseFuture.setSendRequestOK(true);
-                        return;
+                        return;										//成功了下面继续等待，这个return 用的人很绝望，没注意还以为主要发送了对应关系就没了
                     } else {
                         responseFuture.setSendRequestOK(false);
                     }
 
-                    responseTable.remove(opaque);
+                    responseTable.remove(opaque);		//失败了就移除对应关系
                     responseFuture.setCause(f.cause());
-                    responseFuture.putResponse(null);
+                    responseFuture.putResponse(null);  //这一步会释放闭锁，waitResponse会继续执行
                     log.warn("send a request command to channel <" + addr + "> failed.");
                 }
             });
@@ -432,19 +436,21 @@ public abstract class NettyRemotingAbstract {
             
             // 这里可以看出 RMQ 中对异步调用的处理  waitResponse 实际上是  this.countDownLatch.await(timeoutMillis, TimeUnit.MILLISECONDS); 会在这里阻塞住，等待
             // 超时，这种带有响应超时的处理 比直接 用等待通知的方式好多了
+           
             RemotingCommand responseCommand = responseFuture.waitResponse(timeoutMillis);
             if (null == responseCommand) {
-                if (responseFuture.isSendRequestOK()) {
+                if (responseFuture.isSendRequestOK()) { //发送成功返回null肯定是 waitResponse 等待超时了
                     throw new RemotingTimeoutException(RemotingHelper.parseSocketAddressAddr(addr), timeoutMillis,
                         responseFuture.getCause());
                 } else {
+                	 //发送失败 是上面complete时出错了返回null
                     throw new RemotingSendRequestException(RemotingHelper.parseSocketAddressAddr(addr), responseFuture.getCause());
                 }
             }
 
             return responseCommand;
         } finally {
-            this.responseTable.remove(opaque);
+            this.responseTable.remove(opaque); //无论如何都清除掉  id rf的关系
         }
     }
 

@@ -43,6 +43,13 @@ public interface RemotingClient extends RemotingService {
         throws InterruptedException, RemotingConnectException, RemotingTooMuchRequestException,
         RemotingTimeoutException, RemotingSendRequestException;
 
+    
+    /**
+     * 客户端注册处理器
+     * @param requestCode
+     * @param processor
+     * @param executor
+     */
     void registerProcessor(final int requestCode, final NettyRequestProcessor processor,
         final ExecutorService executor);
 
